@@ -1,1 +1,125 @@
-wget https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+#!/bin/bash
+
+# ====== CORES ======
+verde="\e[32m"
+vermelho="\e[31m"
+amarelo="\e[33m"
+azul="\e[34m"
+reset="\e[0m"
+
+# ====== BANNER ======
+clear
+echo -e "${azul}"
+echo "====================================="
+echo "      PeekSecurity Installer"
+echo "====================================="
+echo -e "${reset}"
+
+# ====== DETECÇÃO AUTOMÁTICA ======
+detectar_ambiente() {
+    if [[ -d "/data/data/com.termux" ]]; then
+        echo "termux"
+    elif grep -qi "kali" /etc/os-release 2>/dev/null; then
+        echo "kali"
+    else
+        echo "desconhecido"
+    fi
+}
+
+ambiente_detectado=$(detectar_ambiente)
+
+echo -e "${amarelo}Ambiente detectado: ${verde}$ambiente_detectado${reset}"
+echo ""
+
+# ====== MENU ======
+echo -e "${azul}Selecione uma opção:${reset}"
+echo "1) Usar ambiente detectado"
+echo "2) Escolher manualmente"
+echo ""
+read -p "Opção: " escolha
+
+# ====== ESCOLHA FINAL ======
+if [[ "$escolha" == "1" ]]; then
+    ambiente="$ambiente_detectado"
+else
+    echo ""
+    echo "Digite o ambiente (termux/kali):"
+    read ambiente
+    ambiente=$(echo "$ambiente" | tr '[:upper:]' '[:lower:]')
+fi
+
+# ====== FUNÇÃO DE LOADING ======
+loading() {
+    echo -ne "${amarelo}Processando"
+    for i in {1..3}; do
+        echo -ne "."
+        sleep 0.5
+    done
+    echo -e "${reset}"
+}
+
+# ====== EXECUÇÃO ======
+case $ambiente in
+    termux)
+    echo -e "${verde}Instalando no Termux...${reset}"
+    loading
+
+    pkg update -y && pkg upgrade -y
+    pkg install git wget tar -y   
+
+    # ====== INSTALAR NGROK ======
+    if ! command -v ngrok >/dev/null 2>&1; then
+        echo -e "${amarelo}Baixando ngrok...${reset}"
+        wget -O ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+
+        echo -e "${amarelo}Extraindo ngrok...${reset}"
+        tar -xzf ngrok.tgz
+
+        chmod +x ngrok
+        mv ngrok $PREFIX/bin/
+
+        echo -e "${verde}Ngrok instalado com sucesso!${reset}"
+    else
+        echo -e "${amarelo}Ngrok já está instalado.${reset}"
+    fi
+
+    # ====== CONFIGURAR TOKEN ======
+    echo ""
+    read -p "Deseja configurar o authtoken do ngrok agora? (s/n): " resp
+
+    if [[ "$resp" == "s" || "$resp" == "S" ]]; then
+        echo ""
+        read -p "Cole seu authtoken do ngrok: " token
+
+        if [[ -n "$token" ]]; then
+            ngrok config add-authtoken "$token"
+
+            if [[ $? -eq 0 ]]; then
+                echo -e "${verde}✔ Token configurado com sucesso!${reset}"
+            else
+                echo -e "${vermelho}Erro ao configurar o token.${reset}"
+            fi
+        else
+            echo -e "${vermelho}Token inválido!${reset}"
+        fi
+    else
+        echo -e "${amarelo}Configuração do token ignorada.${reset}"
+    fi
+
+    ;;
+        
+    kali)
+        echo -e "${verde}Instalando no Kali Linux...${reset}"
+        loading
+        sudo apt update && sudo apt upgrade -y
+        sudo apt install git -y
+        ;;
+        
+    *)
+        echo -e "${vermelho}Ambiente inválido!${reset}"
+        exit 1
+        ;;
+esac
+
+echo ""
+echo -e "${verde}✔ Instalação finalizada com sucesso!${reset}"
