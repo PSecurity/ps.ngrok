@@ -1,6 +1,6 @@
 #!/bin/bash
 # PeekSecurity Installer
-# by PeekSecurity
+# @peeksecurity
 
 # ====== CORES ======
 verde="\e[32m"
