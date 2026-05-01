@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================
-# PeekSecurity Installer (Smart Version)
+# PeekSecurity Smart Installer (Full)
 # =====================================
 
 # ====== CORES ======
@@ -50,12 +50,20 @@ detectar_arch() {
     case "$ARCH" in
         x86_64)
             NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+            CLOUDFLARE_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
             ;;
         aarch64)
             NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
+            CLOUDFLARE_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
             ;;
         armv7l)
             NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
+            CLOUDFLARE_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm"
+            ;;
+        i686)
+            echo -e "${amarelo}32 bits detectado → Ngrok não suportado${reset}"
+            NGROK_URL=""
+            CLOUDFLARE_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-386"
             ;;
         *)
             echo -e "${vermelho}Arquitetura não suportada: $ARCH${reset}"
@@ -68,10 +76,10 @@ detectar_arch() {
 verificar_ngrok() {
     if command -v ngrok >/dev/null 2>&1; then
         if ngrok version >/dev/null 2>&1; then
-            echo -e "${verde}✔ Ngrok já instalado e funcional${reset}"
+            echo -e "${verde}✔ Ngrok funcional${reset}"
             return 0
         else
-            echo -e "${vermelho}Ngrok quebrado detectado! Reinstalando...${reset}"
+            echo -e "${vermelho}Ngrok quebrado! Reinstalando...${reset}"
 
             if [[ "$ambiente" == "kali" ]]; then
                 sudo rm -f /usr/local/bin/ngrok
@@ -89,22 +97,19 @@ verificar_ngrok() {
 # ====== INSTALAR NGROK ======
 instalar_ngrok() {
 
-    verificar_ngrok && return
-
     detectar_arch
 
-    echo -e "${amarelo}Arquitetura: $ARCH${reset}"
+    if [[ -z "$NGROK_URL" ]]; then
+        echo -e "${vermelho}Ngrok não disponível para essa arquitetura${reset}"
+        return
+    fi
+
+    verificar_ngrok && return
+
     echo -e "${amarelo}Baixando ngrok...${reset}"
 
-    wget -O ngrok.tgz "$NGROK_URL" || {
-        echo -e "${vermelho}Erro no download${reset}"
-        exit 1
-    }
-
-    tar -xzf ngrok.tgz || {
-        echo -e "${vermelho}Erro ao extrair${reset}"
-        exit 1
-    }
+    wget -O ngrok.tgz "$NGROK_URL" || exit 1
+    tar -xzf ngrok.tgz || exit 1
 
     chmod +x ngrok
 
@@ -114,65 +119,86 @@ instalar_ngrok() {
         mv ngrok $PREFIX/bin/
     fi
 
-    # ===== TESTE FINAL =====
-    if ngrok version >/dev/null 2>&1; then
-        echo -e "${verde}✔ Ngrok instalado com sucesso!${reset}"
+    ngrok version >/dev/null 2>&1 && \
+    echo -e "${verde}✔ Ngrok instalado!${reset}" || \
+    echo -e "${vermelho}Erro no ngrok${reset}"
+}
+
+# ====== INSTALAR CLOUDFLARE ======
+instalar_cloudflare() {
+
+    detectar_arch
+
+    echo -e "${amarelo}Baixando Cloudflare Tunnel...${reset}"
+
+    wget -O cloudflared "$CLOUDFLARE_URL" || exit 1
+    chmod +x cloudflared
+
+    if [[ "$ambiente" == "kali" ]]; then
+        sudo mv cloudflared /usr/local/bin/
     else
-        echo -e "${vermelho}Erro: instalação falhou${reset}"
-        exit 1
+        mv cloudflared $PREFIX/bin/
     fi
+
+    cloudflared --version >/dev/null 2>&1 && \
+    echo -e "${verde}✔ Cloudflare instalado!${reset}" || \
+    echo -e "${vermelho}Erro no Cloudflare${reset}"
 }
 
 # ====== CONFIG TOKEN ======
 configurar_token() {
-    echo ""
-    read -p "Deseja configurar o authtoken do ngrok agora? (s/n): " resp
+    read -p "Configurar authtoken do ngrok? (s/n): " resp
 
     if [[ "$resp" =~ ^[sS]$ ]]; then
-        read -p "Cole seu authtoken: " token
+        read -p "Token: " token
 
-        if [[ -z "$token" ]]; then
-            echo -e "${vermelho}Token vazio!${reset}"
-            return
-        fi
-
-        if ! ngrok version >/dev/null 2>&1; then
-            echo -e "${vermelho}Ngrok não está funcional.${reset}"
-            return
-        fi
-
-        ngrok config add-authtoken "$token"
-
-        if [[ $? -eq 0 ]]; then
-            echo -e "${verde}✔ Token configurado!${reset}"
-        else
-            echo -e "${vermelho}Erro ao configurar token${reset}"
-        fi
+        ngrok config add-authtoken "$token" && \
+        echo -e "${verde}✔ Token OK${reset}" || \
+        echo -e "${vermelho}Erro no token${reset}"
     fi
 }
 
-# ====== EXECUÇÃO ======
+# ====== DEPENDÊNCIAS ======
 case $ambiente in
-
     termux)
         loading
         pkg update -y && pkg install wget tar -y
         ;;
-
     kali)
         loading
         sudo apt update && sudo apt install wget tar -y
         ;;
-
     *)
-        echo -e "${vermelho}Ambiente não suportado${reset}"
+        echo "Ambiente não suportado"
         exit 1
         ;;
 esac
 
-instalar_ngrok
-configurar_token
+# ====== MENU FINAL ======
+echo ""
+echo -e "${azul}Escolha o túnel:${reset}"
+echo "1) Ngrok"
+echo "2) Cloudflare (Recomendado)"
+echo ""
+read -p "Opção: " escolha
 
+case $escolha in
+    1)
+        instalar_ngrok
+        configurar_token
+        ;;
+    2)
+        instalar_cloudflare
+        ;;
+    *)
+        echo -e "${vermelho}Opção inválida${reset}"
+        exit 1
+        ;;
+esac
+
+# ====== FINAL ======
 echo ""
 echo -e "${verde}✔ Instalação concluída!${reset}"
-echo -e "${azul}Teste: ngrok version${reset}"
+echo -e "${azul}Teste:${reset}"
+echo "ngrok version"
+echo "cloudflared --version"
