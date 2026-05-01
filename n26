@@ -1,7 +1,6 @@
 #!/bin/bash
 # =====================================
-# PeekSecurity Installer
-# by PeekSecurity
+# PeekSecurity Installer (Smart Version)
 # =====================================
 
 # ====== CORES ======
@@ -15,13 +14,11 @@ reset="\e[0m"
 clear
 echo -e "${azul}"
 echo "====================================="
-echo "      PeekSecurity Installer"
-echo "-------------------------------------"
-echo "   by PeekSecurity • @peeksecurity"
+echo "   PeekSecurity Smart Installer"
 echo "====================================="
 echo -e "${reset}"
 
-# ====== DETECÇÃO AUTOMÁTICA ======
+# ====== DETECÇÃO AMBIENTE ======
 detectar_ambiente() {
     if [[ -d "/data/data/com.termux" ]]; then
         echo "termux"
@@ -32,36 +29,21 @@ detectar_ambiente() {
     fi
 }
 
-ambiente_detectado=$(detectar_ambiente)
+ambiente=$(detectar_ambiente)
 
-echo -e "${amarelo}Ambiente detectado: ${verde}$ambiente_detectado${reset}"
-echo ""
-
-# ====== MENU ======
-echo -e "${azul}Selecione uma opção:${reset}"
-echo "1) Usar ambiente detectado"
-echo "2) Escolher manualmente"
-echo ""
-read -p "Opção: " escolha
-
-if [[ "$escolha" == "1" ]]; then
-    ambiente="$ambiente_detectado"
-else
-    read -p "Digite o ambiente (termux/kali): " ambiente
-    ambiente=$(echo "$ambiente" | tr '[:upper:]' '[:lower:]')
-fi
+echo -e "${amarelo}Ambiente: ${verde}$ambiente${reset}"
 
 # ====== LOADING ======
 loading() {
     echo -ne "${amarelo}Processando"
     for i in {1..3}; do
         echo -ne "."
-        sleep 0.5
+        sleep 0.4
     done
     echo -e "${reset}"
 }
 
-# ====== DETECTAR ARQUITETURA ======
+# ====== DETECTAR ARCH ======
 detectar_arch() {
     ARCH=$(uname -m)
 
@@ -82,45 +64,63 @@ detectar_arch() {
     esac
 }
 
+# ====== VERIFICAR NGROK ======
+verificar_ngrok() {
+    if command -v ngrok >/dev/null 2>&1; then
+        if ngrok version >/dev/null 2>&1; then
+            echo -e "${verde}✔ Ngrok já instalado e funcional${reset}"
+            return 0
+        else
+            echo -e "${vermelho}Ngrok quebrado detectado! Reinstalando...${reset}"
+
+            if [[ "$ambiente" == "kali" ]]; then
+                sudo rm -f /usr/local/bin/ngrok
+            else
+                rm -f $PREFIX/bin/ngrok
+            fi
+
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+
 # ====== INSTALAR NGROK ======
 instalar_ngrok() {
 
-    if command -v ngrok >/dev/null 2>&1; then
-        echo -e "${amarelo}Ngrok já está instalado.${reset}"
-        return
-    fi
+    verificar_ngrok && return
 
     detectar_arch
 
-    echo -e "${amarelo}Arquitetura detectada: $ARCH${reset}"
+    echo -e "${amarelo}Arquitetura: $ARCH${reset}"
     echo -e "${amarelo}Baixando ngrok...${reset}"
 
     wget -O ngrok.tgz "$NGROK_URL" || {
-        echo -e "${vermelho}Erro ao baixar o ngrok.${reset}"
+        echo -e "${vermelho}Erro no download${reset}"
         exit 1
     }
 
-    echo -e "${amarelo}Extraindo ngrok...${reset}"
     tar -xzf ngrok.tgz || {
-        echo -e "${vermelho}Erro ao extrair o ngrok.${reset}"
+        echo -e "${vermelho}Erro ao extrair${reset}"
         exit 1
     }
 
     chmod +x ngrok
 
-    if [[ "$ambiente" == "termux" ]]; then
-        mv ngrok $PREFIX/bin/
-    elif [[ "$ambiente" == "kali" ]]; then
+    if [[ "$ambiente" == "kali" ]]; then
         sudo mv ngrok /usr/local/bin/
+    else
+        mv ngrok $PREFIX/bin/
     fi
 
-    # TESTE REAL
-    if ! command -v ngrok >/dev/null 2>&1; then
-        echo -e "${vermelho}Ngrok não foi instalado corretamente.${reset}"
+    # ===== TESTE FINAL =====
+    if ngrok version >/dev/null 2>&1; then
+        echo -e "${verde}✔ Ngrok instalado com sucesso!${reset}"
+    else
+        echo -e "${vermelho}Erro: instalação falhou${reset}"
         exit 1
     fi
-
-    echo -e "${verde}✔ Ngrok instalado com sucesso!${reset}"
 }
 
 # ====== CONFIG TOKEN ======
@@ -129,27 +129,25 @@ configurar_token() {
     read -p "Deseja configurar o authtoken do ngrok agora? (s/n): " resp
 
     if [[ "$resp" =~ ^[sS]$ ]]; then
-        read -p "Cole seu authtoken do ngrok: " token
+        read -p "Cole seu authtoken: " token
 
-        if [[ -n "$token" ]]; then
-
-            if ! command -v ngrok >/dev/null 2>&1; then
-                echo -e "${vermelho}Ngrok não está funcionando.${reset}"
-                return
-            fi
-
-            ngrok config add-authtoken "$token"
-
-            if [[ $? -eq 0 ]]; then
-                echo -e "${verde}✔ Token configurado com sucesso!${reset}"
-            else
-                echo -e "${vermelho}Erro ao configurar o token.${reset}"
-            fi
-        else
+        if [[ -z "$token" ]]; then
             echo -e "${vermelho}Token vazio!${reset}"
+            return
         fi
-    else
-        echo -e "${amarelo}Configuração ignorada.${reset}"
+
+        if ! ngrok version >/dev/null 2>&1; then
+            echo -e "${vermelho}Ngrok não está funcional.${reset}"
+            return
+        fi
+
+        ngrok config add-authtoken "$token"
+
+        if [[ $? -eq 0 ]]; then
+            echo -e "${verde}✔ Token configurado!${reset}"
+        else
+            echo -e "${vermelho}Erro ao configurar token${reset}"
+        fi
     fi
 }
 
@@ -157,34 +155,24 @@ configurar_token() {
 case $ambiente in
 
     termux)
-        echo -e "${verde}Instalando no Termux...${reset}"
         loading
-
-        pkg update -y && pkg upgrade -y
-        pkg install git wget tar -y
-
-        instalar_ngrok
-        configurar_token
+        pkg update -y && pkg install wget tar -y
         ;;
 
     kali)
-        echo -e "${verde}Instalando no Kali Linux...${reset}"
         loading
-
-        sudo apt update && sudo apt upgrade -y
-        sudo apt install git wget tar -y
-
-        instalar_ngrok
-        configurar_token
+        sudo apt update && sudo apt install wget tar -y
         ;;
 
     *)
-        echo -e "${vermelho}Ambiente inválido!${reset}"
+        echo -e "${vermelho}Ambiente não suportado${reset}"
         exit 1
         ;;
 esac
 
-# ====== FINAL ======
+instalar_ngrok
+configurar_token
+
 echo ""
-echo -e "${verde}✔ Instalação finalizada com sucesso!${reset}"
-echo -e "${azul}Teste com: ngrok version${reset}"
+echo -e "${verde}✔ Instalação concluída!${reset}"
+echo -e "${azul}Teste: ngrok version${reset}"
