@@ -44,11 +44,9 @@ echo "2) Escolher manualmente"
 echo ""
 read -p "Opção: " escolha
 
-# ====== ESCOLHA FINAL ======
 if [[ "$escolha" == "1" ]]; then
     ambiente="$ambiente_detectado"
 else
-    echo ""
     read -p "Digite o ambiente (termux/kali): " ambiente
     ambiente=$(echo "$ambiente" | tr '[:upper:]' '[:lower:]')
 fi
@@ -63,29 +61,66 @@ loading() {
     echo -e "${reset}"
 }
 
+# ====== DETECTAR ARQUITETURA ======
+detectar_arch() {
+    ARCH=$(uname -m)
+
+    case "$ARCH" in
+        x86_64)
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
+            ;;
+        aarch64)
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz"
+            ;;
+        armv7l)
+            NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm.tgz"
+            ;;
+        *)
+            echo -e "${vermelho}Arquitetura não suportada: $ARCH${reset}"
+            exit 1
+            ;;
+    esac
+}
+
 # ====== INSTALAR NGROK ======
 instalar_ngrok() {
+
     if command -v ngrok >/dev/null 2>&1; then
         echo -e "${amarelo}Ngrok já está instalado.${reset}"
         return
     fi
 
+    detectar_arch
+
+    echo -e "${amarelo}Arquitetura detectada: $ARCH${reset}"
     echo -e "${amarelo}Baixando ngrok...${reset}"
-    wget -O ngrok.tgz https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-arm64.tgz
+
+    wget -O ngrok.tgz "$NGROK_URL" || {
+        echo -e "${vermelho}Erro ao baixar o ngrok.${reset}"
+        exit 1
+    }
 
     echo -e "${amarelo}Extraindo ngrok...${reset}"
-    tar -xzf ngrok.tgz
+    tar -xzf ngrok.tgz || {
+        echo -e "${vermelho}Erro ao extrair o ngrok.${reset}"
+        exit 1
+    }
 
     chmod +x ngrok
 
-    # Verificar o ambiente e mover para a pasta correta
     if [[ "$ambiente" == "termux" ]]; then
         mv ngrok $PREFIX/bin/
     elif [[ "$ambiente" == "kali" ]]; then
         sudo mv ngrok /usr/local/bin/
     fi
 
-    echo -e "${verde}✔ Ngrok instalado!${reset}"
+    # TESTE REAL
+    if ! command -v ngrok >/dev/null 2>&1; then
+        echo -e "${vermelho}Ngrok não foi instalado corretamente.${reset}"
+        exit 1
+    fi
+
+    echo -e "${verde}✔ Ngrok instalado com sucesso!${reset}"
 }
 
 # ====== CONFIG TOKEN ======
@@ -94,10 +129,15 @@ configurar_token() {
     read -p "Deseja configurar o authtoken do ngrok agora? (s/n): " resp
 
     if [[ "$resp" =~ ^[sS]$ ]]; then
-        echo ""
         read -p "Cole seu authtoken do ngrok: " token
 
         if [[ -n "$token" ]]; then
+
+            if ! command -v ngrok >/dev/null 2>&1; then
+                echo -e "${vermelho}Ngrok não está funcionando.${reset}"
+                return
+            fi
+
             ngrok config add-authtoken "$token"
 
             if [[ $? -eq 0 ]]; then
